@@ -1,0 +1,36 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "xmp-to-lut"
+version = "0.1.0"
+description = "Convert Adobe Camera Raw XMP presets to Affinity-compatible .cube 3D LUT files"
+requires-python = ">=3.10"
+dependencies = [
+    "defusedxml>=0.7",
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+calibration = [
+    "numpy>=1.24",
+    "Pillow>=10.0",
+]
+dev = [
+    "pytest>=8.0",
+    "maturin>=1.7",
+    "numpy>=1.24",
+    "Pillow>=10.0",
+]
+
+[project.scripts]
+xmp-to-lut = "xmp_to_lut.cli:main"
+
+[tool.maturin]
+python-source = "python"
+module-name = "xmp_to_lut._core"
+features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

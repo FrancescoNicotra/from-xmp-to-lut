@@ -1,0 +1,17 @@
+[package]
+name = "xmp-to-lut"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "xmp_to_lut"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = "0.22"
+rayon = "1.10"
+nalgebra = "0.33"
+
+[features]
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
