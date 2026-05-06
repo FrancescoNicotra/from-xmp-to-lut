@@ -57,6 +57,8 @@ SCALAR_PROPERTIES: dict[str, tuple[str, type]] = {
     "SplitToningBalance": ("split_toning_balance", float),
 }
 
+SUPPORTED_SCALAR_PROPERTIES = frozenset(SCALAR_PROPERTIES)
+
 # XMP crs: child element name -> dataclass field name (all are tone curve sequences)
 SEQUENCE_PROPERTIES: dict[str, str] = {
     "ToneCurvePV2012": "tone_curve_pv2012",
@@ -64,3 +66,5 @@ SEQUENCE_PROPERTIES: dict[str, str] = {
     "ToneCurvePV2012Green": "tone_curve_pv2012_green",
     "ToneCurvePV2012Blue": "tone_curve_pv2012_blue",
 }
+
+SUPPORTED_SEQUENCE_PROPERTIES = frozenset(SEQUENCE_PROPERTIES)

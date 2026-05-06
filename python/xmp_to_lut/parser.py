@@ -12,7 +12,12 @@ from pathlib import Path
 
 import defusedxml.ElementTree as ET
 
-from xmp_to_lut.mappings import SCALAR_PROPERTIES, SEQUENCE_PROPERTIES
+from xmp_to_lut.mappings import (
+    SCALAR_PROPERTIES,
+    SEQUENCE_PROPERTIES,
+    SUPPORTED_SCALAR_PROPERTIES,
+    SUPPORTED_SEQUENCE_PROPERTIES,
+)
 from xmp_to_lut.model import CrsSettings, ToneCurvePoint
 
 # XML namespaces used in XMP sidecar files
@@ -46,6 +51,16 @@ def parse_xmp(source: str | Path) -> CrsSettings:
     XmpParseError
         If the XML is malformed or the expected RDF structure is missing.
     """
+    settings, _warnings = _parse_xmp_details(source)
+    return settings
+
+
+def parse_xmp_with_warnings(source: str | Path) -> tuple[CrsSettings, list[str]]:
+    """Parse an XMP sidecar file and return settings plus warning strings."""
+    return _parse_xmp_details(source)
+
+
+def _parse_xmp_details(source: str | Path) -> tuple[CrsSettings, list[str]]:
     xml_string = _read_source(source)
 
     try:
@@ -63,7 +78,8 @@ def parse_xmp(source: str | Path) -> CrsSettings:
     settings = CrsSettings()
     _extract_scalar_attributes(description, settings)
     _extract_sequence_elements(description, settings)
-    return settings
+    warnings = _collect_warnings(description)
+    return settings, warnings
 
 
 def _read_source(source: str | Path) -> str:
@@ -170,3 +186,35 @@ def _parse_curve_point(text: str, context_name: str) -> ToneCurvePoint:
             f"Non-numeric tone curve point in crs:{context_name}: {text!r}"
         ) from exc
     return ToneCurvePoint(x, y)
+
+
+def _collect_warnings(description: ET.Element) -> list[str]:
+    """Return warnings for unsupported crs: properties in the description."""
+    crs_ns = _NS["crs"]
+
+    unknown_attrs: list[str] = []
+    for attr_name in description.attrib:
+        if not attr_name.startswith(f"{{{crs_ns}}}"):
+            continue
+        local_name = attr_name.split("}", 1)[1]
+        if local_name not in SUPPORTED_SCALAR_PROPERTIES:
+            unknown_attrs.append(local_name)
+
+    unknown_elements: list[str] = []
+    for child in description:
+        if not child.tag.startswith(f"{{{crs_ns}}}"):
+            continue
+        local_name = child.tag.split("}", 1)[1]
+        if local_name not in SUPPORTED_SEQUENCE_PROPERTIES:
+            unknown_elements.append(local_name)
+
+    warnings: list[str] = []
+    if unknown_attrs:
+        warnings.append(
+            "Unsupported crs: attributes: " + ", ".join(sorted(unknown_attrs))
+        )
+    if unknown_elements:
+        warnings.append(
+            "Unsupported crs: elements: " + ", ".join(sorted(unknown_elements))
+        )
+    return warnings

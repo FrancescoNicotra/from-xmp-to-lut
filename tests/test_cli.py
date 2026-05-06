@@ -88,18 +88,34 @@ class TestInspect:
     def test_inspect_shows_modified(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["inspect", str(SAMPLE_XMP)])
         assert result.exit_code == 0, result.output
-        assert "Modified settings:" in result.output
+        assert "Summary:" in result.output
+        assert "Modified fields:" in result.output
         assert "exposure_2012: 0.5" in result.output
 
     def test_inspect_shows_defaults(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["inspect", str(SAMPLE_XMP)])
         assert result.exit_code == 0
-        assert "Default (unchanged) settings:" in result.output
+        assert "Unchanged fields:" in result.output
 
     def test_inspect_shows_temperature(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["inspect", str(SAMPLE_XMP)])
         assert result.exit_code == 0
         assert "temperature: 5500" in result.output
+
+    def test_inspect_warnings(self, runner: CliRunner, tmp_path: Path) -> None:
+        warn_xmp = tmp_path / "warn.xmp"
+        xml = SAMPLE_XMP.read_text()
+        xml = xml.replace(
+            "crs:ProcessVersion=\"11.0\"",
+            "crs:ProcessVersion=\"11.0\" crs:UnsupportedFoo=\"1\"",
+        )
+        warn_xmp.write_text(xml)
+
+        result = runner.invoke(main, ["inspect", str(warn_xmp)])
+
+        assert result.exit_code == 0, result.output
+        assert "Warnings:" in result.output
+        assert "Unsupported crs: attributes: UnsupportedFoo" in result.output
 
     def test_inspect_nonexistent_file(self, runner: CliRunner) -> None:
         result = runner.invoke(main, ["inspect", "/nonexistent/file.xmp"])
@@ -128,6 +144,7 @@ class TestBatch:
         assert (out / "a.cube").exists()
         assert (out / "b.cube").exists()
         assert "2 converted" in result.output
+        assert "Failures: parse=0" in result.output
 
     def test_batch_default_output_dir(self, runner: CliRunner, tmp_path: Path) -> None:
         (tmp_path / "test.xmp").write_text(SAMPLE_XMP.read_text())
@@ -152,6 +169,7 @@ class TestBatch:
         assert result.exit_code == 1
         assert "1 converted" in result.output
         assert "1 failed" in result.output
+        assert "Failures: parse=1" in result.output
 
     def test_batch_custom_size(self, runner: CliRunner, tmp_path: Path) -> None:
         (tmp_path / "x.xmp").write_text(SAMPLE_XMP.read_text())
@@ -161,6 +179,79 @@ class TestBatch:
         assert result.exit_code == 0, result.output
         content = (out / "x.cube").read_text()
         assert "LUT_3D_SIZE 17" in content
+
+
+# ---------------------------------------------------------------------------
+# calibrate
+# ---------------------------------------------------------------------------
+
+
+def _write_identity_cube(path: Path, lut_size: int) -> None:
+    lines = [
+        'TITLE "Identity"',
+        f"LUT_3D_SIZE {lut_size}",
+        "DOMAIN_MIN 0.0 0.0 0.0",
+        "DOMAIN_MAX 1.0 1.0 1.0",
+        "",
+    ]
+    denom = lut_size - 1
+    for ib in range(lut_size):
+        for ig in range(lut_size):
+            for ir in range(lut_size):
+                r = ir / denom
+                g = ig / denom
+                b = ib / denom
+                lines.append(f"{r:.6f} {g:.6f} {b:.6f}")
+    path.write_text("\n".join(lines) + "\n")
+
+
+class TestCalibrate:
+    """Tests for the ``calibrate`` subcommand."""
+
+    def test_calibrate_report_only(self, runner: CliRunner, tmp_path: Path) -> None:
+        from xmp_to_lut.hald import save_hald_identity
+
+        cube_path = tmp_path / "simulated.cube"
+        _write_identity_cube(cube_path, lut_size=4)
+
+        hald_path = tmp_path / "reference.png"
+        save_hald_identity(hald_path, level=2, bit_depth=8)
+
+        result = runner.invoke(
+            main, ["calibrate", str(cube_path), str(hald_path), "--level", "2"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Calibration Report" in result.output
+        assert "RMSE" in result.output
+        assert "Written" not in result.output
+
+    def test_calibrate_writes_output(self, runner: CliRunner, tmp_path: Path) -> None:
+        from xmp_to_lut.hald import save_hald_identity
+
+        cube_path = tmp_path / "simulated.cube"
+        _write_identity_cube(cube_path, lut_size=4)
+
+        hald_path = tmp_path / "reference.png"
+        save_hald_identity(hald_path, level=2, bit_depth=8)
+
+        output_path = tmp_path / "corrected.cube"
+        result = runner.invoke(
+            main,
+            [
+                "calibrate",
+                str(cube_path),
+                str(hald_path),
+                "--level",
+                "2",
+                "-o",
+                str(output_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert output_path.exists()
+        assert "Written" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +267,7 @@ class TestMainGroup:
         assert result.exit_code == 0
         assert "convert" in result.output
         assert "inspect" in result.output
+        assert "calibrate" in result.output
         assert "batch" in result.output
 
     def test_no_args_shows_help(self, runner: CliRunner) -> None:

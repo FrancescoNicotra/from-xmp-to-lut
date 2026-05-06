@@ -19,6 +19,26 @@ from pathlib import Path
 from xmp_to_lut.hald import LutEntry
 
 
+class CalibrationError(Exception):
+    """Base error for calibration pipeline failures."""
+
+
+class CubeParseError(ValueError, CalibrationError):
+    """Raised when a .cube file cannot be parsed or read."""
+
+
+class HaldReadError(ValueError, CalibrationError):
+    """Raised when the processed HALD image cannot be read."""
+
+
+class LutSizeMismatchError(ValueError, CalibrationError):
+    """Raised when the LUT size doesn't match the HALD level."""
+
+
+class CalibrationIOError(OSError, CalibrationError):
+    """Raised when writing the corrected .cube file fails."""
+
+
 @dataclass
 class CalibrationReport:
     """Statistics from comparing a simulated LUT against a reference."""
@@ -203,12 +223,19 @@ def write_corrected_cube(
     """
     from xmp_to_lut.hald import read_hald_lut
 
-    lut_size, simulated = parse_cube_file(simulated_cube_path)
-    reference = read_hald_lut(processed_hald_path, level)
+    try:
+        lut_size, simulated = parse_cube_file(simulated_cube_path)
+    except Exception as exc:
+        raise CubeParseError(f"Failed to parse .cube file: {exc}") from exc
+
+    try:
+        reference = read_hald_lut(processed_hald_path, level)
+    except Exception as exc:
+        raise HaldReadError(f"Failed to read HALD image: {exc}") from exc
 
     expected_lut_size = level * level
     if lut_size != expected_lut_size:
-        raise ValueError(
+        raise LutSizeMismatchError(
             f"LUT size mismatch: .cube has size {lut_size}, "
             f"but HALD level {level} implies size {expected_lut_size}"
         )
@@ -217,7 +244,12 @@ def write_corrected_cube(
     deltas = compute_deltas(simulated, reference)
     corrected = apply_deltas(simulated, deltas)
 
-    _write_cube_entries(corrected, lut_size, title, output_path)
+    try:
+        _write_cube_entries(corrected, lut_size, title, output_path)
+    except Exception as exc:
+        raise CalibrationIOError(
+            f"Failed to write corrected .cube file: {exc}"
+        ) from exc
     return report
 
 
@@ -254,12 +286,19 @@ def calibrate(
     """
     from xmp_to_lut.hald import read_hald_lut
 
-    lut_size, simulated = parse_cube_file(simulated_cube_path)
-    reference = read_hald_lut(processed_hald_path, level)
+    try:
+        lut_size, simulated = parse_cube_file(simulated_cube_path)
+    except Exception as exc:
+        raise CubeParseError(f"Failed to parse .cube file: {exc}") from exc
+
+    try:
+        reference = read_hald_lut(processed_hald_path, level)
+    except Exception as exc:
+        raise HaldReadError(f"Failed to read HALD image: {exc}") from exc
 
     expected_lut_size = level * level
     if lut_size != expected_lut_size:
-        raise ValueError(
+        raise LutSizeMismatchError(
             f"LUT size mismatch: .cube has size {lut_size}, "
             f"but HALD level {level} implies size {expected_lut_size}"
         )
